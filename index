@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Control - Empresas y Densidades</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.16.9/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>Panel de Control: Análisis de Datos</h1>
+    
+    <!-- Botón para subir archivo Excel -->
+    <input type="file" id="fileInput" />
+    <button onclick="procesarArchivo()">Cargar y Procesar Datos</button>
+    
+    <!-- Sección para visualizar tablas generadas -->
+    <div id="panelEmpresas">
+        <h2>Tabla por Empresa</h2>
+        <table id="tablaEmpresas" border="1">
+            <thead>
+                <tr>
+                    <th>Empresa</th>
+                    <th>Tiempo Promedio de Concurrencia</th>
+                    <th>% Eventos Cumplidos</th>
+                    <th>% Falsas Alarmas</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Los datos se llenarán dinámicamente -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Gráfico -->
+    <div>
+        <h2>Gráfico de Cumplimiento por Empresa</h2>
+        <canvas id="graficoCumplimiento"></canvas>
+    </div>
+
+    <script>
+        function procesarArchivo() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert("Por favor selecciona un archivo Excel.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                // Leer la hoja "BASE"
+                const sheetName = "BASE";
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet);
+
+                // Procesar los datos de la hoja BASE
+                generarTablas(jsonData);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function generarTablas(data) {
+            const tablaEmpresas = document.getElementById('tablaEmpresas').getElementsByTagName('tbody')[0];
+            tablaEmpresas.innerHTML = "";  // Limpiar tabla
+
+            let resumenEmpresas = {};
+
+            data.forEach(row => {
+                const empresa = row['EMPRESA_ID'];
+                const operacionRemota = row['Operacion Manual o Remota'];
+                const cumple = row['CUMPLE_TOTAL'];
+                const falsaAlarma = row['FALSA_ALARMA'];
+                const tiempoConcurrencia = parseFloat(row['HRS-Total-Sin duplicados']) || 0;
+
+                if (!resumenEmpresas[empresa]) {
+                    resumenEmpresas[empresa] = { 
+                        totalTiempo: 0, 
+                        totalEventos: 0, 
+                        totalCumplidos: 0, 
+                        totalFalsasAlarmas: 0, 
+                        totalFallas: 0 
+                    };
+                }
+
+                resumenEmpresas[empresa].totalTiempo += tiempoConcurrencia;
+                resumenEmpresas[empresa].totalEventos += 1;
+                if (cumple === "Cumple") resumenEmpresas[empresa].totalCumplidos += 1;
+                if (falsaAlarma === "REAL") resumenEmpresas[empresa].totalFalsasAlarmas += 1;
+                resumenEmpresas[empresa].totalFallas += 1;
+            });
+
+            // Insertar datos en la tabla
+            Object.keys(resumenEmpresas).forEach(empresa => {
+                const datos = resumenEmpresas[empresa];
+                const promedioConcurrencia = (datos.totalTiempo / datos.totalEventos).toFixed(2);
+                const porcentajeCumplidos = ((datos.totalCumplidos / datos.totalEventos) * 100).toFixed(2);
+                const porcentajeFalsasAlarmas = ((datos.totalFalsasAlarmas / datos.totalFallas) * 100).toFixed(2);
+
+                const row = tablaEmpresas.insertRow();
+                row.insertCell(0).textContent = empresa;
+                row.insertCell(1).textContent = promedioConcurrencia;
+                row.insertCell(2).textContent = porcentajeCumplidos + '%';
+                row.insertCell(3).textContent = porcentajeFalsasAlarmas + '%';
+            });
+
+            generarGrafico(resumenEmpresas);
+        }
+
+        function generarGrafico(resumenEmpresas) {
+            const empresas = Object.keys(resumenEmpresas);
+            const datosCumplimiento = empresas.map(empresa => 
+                ((resumenEmpresas[empresa].totalCumplidos / resumenEmpresas[empresa].totalEventos) * 100).toFixed(2)
+            );
+
+            const ctx = document.getElementById('graficoCumplimiento').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: empresas,
+                    datasets: [{
+                        label: '% Cumplimiento',
+                        data: datosCumplimiento,
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
